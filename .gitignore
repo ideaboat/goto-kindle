@@ -1,0 +1,15 @@
+# Python 缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 临时文件
+*.tmp
+*.temp
+
+# macOS 系统文件
+.DS_Store
+Thumbs.db
+
+# 如果以后有配置文件（如包含个人路径），可以忽略
+config.ini
