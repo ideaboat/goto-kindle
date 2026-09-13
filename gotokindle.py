@@ -2,9 +2,10 @@
 # -*- coding: utf-8 -*-
 """
 gotokindle - 将剪贴板图文一键发送至Kindle（macOS版）
-用法：在终端执行 python3 gotokindle.py
+用法：在终端执行 gotokindle [-title 标题]   （用 -help 查看帮助）
 """
 
+import argparse
 import os
 import sys
 import subprocess
@@ -33,6 +34,9 @@ except ImportError:
 KINDLE_MOUNT = "/Volumes/Kindle"
 KINDLE_DOCS = os.path.join(KINDLE_MOUNT, "documents")
 CALIBRE_CONVERT = "/usr/local/bin/ebook-convert"
+if not os.path.exists(CALIBRE_CONVERT):
+    # Calibre官方安装包的实际路径
+    CALIBRE_CONVERT = "/Applications/calibre.app/Contents/MacOS/ebook-convert"
 
 # 文字大小（仅对MOBI生效）
 FONT_SIZE = 16  # pt
@@ -40,6 +44,20 @@ FONT_SIZE = 16  # pt
 TEXT_THRESHOLD = 500
 
 # ============ 辅助函数 ============
+def parse_args():
+    """解析命令行参数"""
+    parser = argparse.ArgumentParser(
+        prog="gotokindle",
+        usage="gotokindle [-title 标题] [-help]",
+        description="把剪贴板中的图文发送到Kindle（自动生成TXT或MOBI并拷入documents目录）。",
+        add_help=False,
+    )
+    group = parser.add_argument_group("参数")
+    group.add_argument("-title", metavar="标题",
+                       help="自定义标题，格式为「标题_4位随机码」（同时用作文件名）")
+    group.add_argument("-help", "-h", action="help", help="显示本帮助并退出")
+    return parser.parse_args()
+
 def random_suffix(length=4):
     """生成随机数字后缀"""
     return ''.join(random.choices(string.digits, k=length))
@@ -77,11 +95,12 @@ def kindle_connected():
     """检查Kindle是否挂载"""
     return os.path.isdir(KINDLE_MOUNT) and os.path.isdir(KINDLE_DOCS)
 
-def generate_unique_filename(ext, prefix="Kindle"):
-    """生成带时间戳和随机后缀的文件名"""
-    ts = timestamp_str()
+def generate_unique_filename(ext, prefix="Kindle", title=None):
+    """生成文件名：指定title时为 title_随机码，否则为 prefix_时间戳_随机码"""
     suffix = random_suffix(4)
-    return f"{prefix}_{ts}_{suffix}.{ext}"
+    if title:
+        return f"{title}_{suffix}.{ext}"
+    return f"{prefix}_{timestamp_str()}_{suffix}.{ext}"
 
 def copy_file_to_kindle(src_path, dest_filename):
     """拷贝文件到Kindle documents目录，返回目标完整路径"""
@@ -98,10 +117,10 @@ def copy_file_to_kindle(src_path, dest_filename):
         print(f"拷贝失败：{e}")
         sys.exit(1)
 
-def convert_html_to_mobi(html_content, output_path):
+def convert_html_to_mobi(html_content, output_path, title):
     """
     将HTML字符串转换为MOBI文件，使用Calibre的ebook-convert
-    返回生成的MOBI文件路径（即output_path）
+    title 会写入电子书元数据（Kindle 书库显示的就是它，而非文件名）
     """
     if not os.path.exists(CALIBRE_CONVERT):
         print(f"错误：找不到 Calibre 转换器 {CALIBRE_CONVERT}")
@@ -117,7 +136,8 @@ def convert_html_to_mobi(html_content, output_path):
         # 执行转换
         cmd = [CALIBRE_CONVERT, temp_html, output_path,
                "--output-profile=kindle",
-               "--base-font-size", str(FONT_SIZE)  # 额外保证
+               "--base-font-size", str(FONT_SIZE),  # 额外保证
+               "--title", title                      # 写入元数据，Kindle 显示它
               ]
         print("正在转换电子书，请稍候...")
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -201,6 +221,7 @@ img {{
 
 # ============ 主流程 ============
 def main():
+    title = parse_args().title
     print("正在读取剪贴板...")
     ctype, content = get_clipboard_content()
 
@@ -213,11 +234,11 @@ def main():
         print("检测到图像，将生成带图的MOBI电子书（方案二）")
         html_content = build_html_from_image(content)
         ext = "mobi"
-        filename = generate_unique_filename(ext, "KindleImage")
+        filename = generate_unique_filename(ext, "KindleImage", title)
         # 生成临时MOBI文件
         with tempfile.NamedTemporaryFile(suffix='.mobi', delete=False) as tmp:
             mobi_path = tmp.name
-        convert_html_to_mobi(html_content, mobi_path)
+        convert_html_to_mobi(html_content, mobi_path, os.path.splitext(filename)[0])
         # 拷贝
         dest = copy_file_to_kindle(mobi_path, filename)
         os.unlink(mobi_path)  # 清理临时文件
@@ -230,7 +251,7 @@ def main():
         if char_count <= TEXT_THRESHOLD:
             print("字符数较少，采用方案一：直接拷贝为纯文本TXT")
             # 生成TXT文件，注意编码UTF-8
-            filename = generate_unique_filename("txt", "KindleText")
+            filename = generate_unique_filename("txt", "KindleText", title)
             with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as f:
                 f.write(text)
                 txt_path = f.name
@@ -239,10 +260,10 @@ def main():
         else:
             print("字符数较多，采用方案二：生成MOBI电子书（带字号16）")
             html_content = build_html_from_text(text)
-            filename = generate_unique_filename("mobi", "KindleText")
+            filename = generate_unique_filename("mobi", "KindleText", title)
             with tempfile.NamedTemporaryFile(suffix='.mobi', delete=False) as tmp:
                 mobi_path = tmp.name
-            convert_html_to_mobi(html_content, mobi_path)
+            convert_html_to_mobi(html_content, mobi_path, os.path.splitext(filename)[0])
             dest = copy_file_to_kindle(mobi_path, filename)
             os.unlink(mobi_path)
 

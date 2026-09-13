@@ -6,7 +6,7 @@ One-click tool to send clipboard content (text/images) to your Kindle via USB (p
 - Automatically detects text or images from clipboard
 - Short text (≤500 chars) → copied as TXT; long text → converted to MOBI with 16pt font
 - Images generate a MOBI with inline image
-- Auto-generates unique filenames (timestamp + random suffix)
+- Auto-generates unique filenames (timestamp + random suffix); `-title` sets a custom title
 - Checks if Kindle is mounted; prompts you to connect if not
 
 ## Dependencies
@@ -21,8 +21,13 @@ One-click tool to send clipboard content (text/images) to your Kindle via USB (p
 
 ## Usage
 ```bash
-gotokindle
+gotokindle                  # read clipboard, auto-title, send
+gotokindle -title weekly    # saved as weekly_1234.txt / .mobi
+gotokindle -help            # show features and options
 ```
+
+`-title` is used for both the first part of the filename (a 4-digit random code is appended to avoid duplicates) and the ebook metadata title, which is what the Kindle library displays. Without it the filename stays `prefix_timestamp_random.ext`.
+
 (Recommend setting an alias or symlink to PATH)
 
 License
